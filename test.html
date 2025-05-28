@@ -1,131 +1,28 @@
-<!-- === Visual Source/Destination with Arrows === -->
-<div class="images" style="text-align: center; margin: 20px 0;">
-    <img id="source-img" src="internal_app.png" alt="Source" height="120">
-    <img src="arrow.gif" alt="Request" height="40">
-    <img src="arrow_back.gif" alt="Response" height="40">
-    <img id="destination-img" src="internal_service.png" alt="Destination" height="120">
-</div>
+from PIL import Image, ImageEnhance
+import imageio
+import os
 
-<!-- === Source Section === -->
-<div class="section" id="source-section">
-    <h3>Source</h3>
-    <label>Where is your source app located?</label><br>
-    <input type="radio" name="source-location" value="internal"> Internal<br>
-    <input type="radio" name="source-location" value="external"> External<br>
+# Load the base image
+base_image = Image.open("arrow.png").convert("RGBA")
 
-    <div id="source-connectivity" style="display: none;">
-        <label>What is the source connectivity method?</label><br>
-        <select id="source-connect-method">
-            <option value="">--Select--</option>
-            <option value="lease_line">Lease Line</option>
-            <option value="https">HTTPS</option>
-        </select>
-    </div>
+# Create frames: alternate between original and faded for blinking effect
+frames = []
 
-    <div id="payload-questions" style="display: none;">
-        <label>What is the incoming payload size (in MB)?</label><br>
-        <input type="number" id="payload-size"><br>
-        <label>What is the OAS spec file size (in KB)?</label><br>
-        <input type="number" id="oas-size"><br>
-    </div>
-</div>
+for i in range(4):  # repeat effect a few times
+    enhancer = ImageEnhance.Brightness(base_image)
+    bright = enhancer.enhance(1.0)  # full brightness
+    dim = enhancer.enhance(0.3)     # dimmed
 
-<!-- === Destination Section === -->
-<div class="section" id="destination-section">
-    <h3>Destination</h3>
-    <label>Where is your destination app located?</label><br>
-    <input type="radio" name="destination-location" value="internal"> Internal<br>
-    <input type="radio" name="destination-location" value="external"> External<br>
+    frames.append(bright)
+    frames.append(dim)
 
-    <div id="destination-connectivity" style="display: none;">
-        <label>What is the destination connectivity method?</label><br>
-        <select id="destination-connect-method">
-            <option value="">--Select--</option>
-            <option value="https">HTTPS</option>
-            <option value="mq">MQ</option>
-            <option value="kafka">Kafka</option>
-        </select>
-    </div>
-</div>
+# Save as GIF
+frames[0].save(
+    "arrow_blink.gif",
+    save_all=True,
+    append_images=frames[1:],
+    duration=300,  # milliseconds between frames
+    loop=0
+)
 
-<!-- === Script for Logic === -->
-<script>
-    const sourceRadios = document.getElementsByName("source-location");
-    const destinationRadios = document.getElementsByName("destination-location");
-    const sourceImg = document.getElementById("source-img");
-    const destImg = document.getElementById("destination-img");
-
-    const sourceConnDiv = document.getElementById("source-connectivity");
-    const destConnDiv = document.getElementById("destination-connectivity");
-    const payloadDiv = document.getElementById("payload-questions");
-
-    // Handle source selection
-    sourceRadios.forEach(radio => {
-        radio.addEventListener("change", () => {
-            const sourceVal = document.querySelector("input[name='source-location']:checked").value;
-            sourceImg.src = sourceVal === "external" ? "external_app.png" : "internal_app.png";
-            sourceConnDiv.style.display = sourceVal === "external" ? "block" : "none";
-            destConnDiv.style.display = "none";
-            payloadDiv.style.display = "none";
-
-            // Update destination options
-            document.querySelectorAll("input[name='destination-location']").forEach(r => {
-                if (sourceVal === "external") {
-                    r.disabled = r.value !== "internal";
-                    r.checked = r.value === "internal";
-                    destImg.src = "internal_service.png";
-                } else {
-                    r.disabled = false;
-                }
-            });
-        });
-    });
-
-    // Handle source connectivity method
-    document.getElementById("source-connect-method").addEventListener("change", (e) => {
-        const method = e.target.value;
-        if (method === "lease_line") {
-            alert("DECAM or RISE or APG DECAM flow");
-        } else if (method === "https") {
-            destConnDiv.style.display = "block";
-        }
-    });
-
-    // Handle destination location
-    document.querySelectorAll("input[name='destination-location']").forEach(r => {
-        r.addEventListener("change", () => {
-            const destVal = r.value;
-            const sourceVal = document.querySelector("input[name='source-location']:checked").value;
-            destImg.src = destVal === "external" ? "external_service.png" : "internal_service.png";
-
-            if (sourceVal === "internal") {
-                if (destVal === "internal") {
-                    alert("Internal flow");
-                } else {
-                    alert("Egress flow");
-                }
-            }
-        });
-    });
-
-    // Handle destination connectivity method
-    document.getElementById("destination-connect-method").addEventListener("change", (e) => {
-        const method = e.target.value;
-        if (method === "mq") {
-            alert("DataPower flow");
-        } else if (method === "https" || method === "kafka") {
-            payloadDiv.style.display = "block";
-        }
-    });
-
-    // Handle payload & OAS size logic
-    document.getElementById("oas-size").addEventListener("change", () => {
-        const payload = parseFloat(document.getElementById("payload-size").value || "0");
-        const oas = parseFloat(document.getElementById("oas-size").value || "0");
-        if (payload > 10 || oas > 500) {
-            alert("Use DataPower");
-        } else {
-            alert("Use APG");
-        }
-    });
-</script>
+print("arrow_blink.gif created successfully!")
