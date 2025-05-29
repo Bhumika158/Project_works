@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>COP Gateway Checker</title>
+    <style>
+        .section { margin-bottom: 20px; }
+        .hidden { display: none; }
+        .results { margin-top: 20px; }
+        .row { display: flex; justify-content: space-between; gap: 40px; }
+        .column { flex: 1; }
+    </style>
+</head>
+<body>
+    <h2>Consumer Onboarding Eligibility Checker</h2>
+    <form method="POST" id="gateway-form">
+
+        <!-- Source and Destination Selection -->
+        <div class="section">
+            <h3>Step 1: Source & Destination</h3>
+            <div class="row">
+                <div class="column">
+                    <label>Where is the source located?</label><br>
+                    <input type="radio" name="source_location" value="internal" required onchange="onSourceChange()"> Internal<br>
+                    <input type="radio" name="source_location" value="external" onchange="onSourceChange()"> External<br>
+                </div>
+                <div class="column">
+                    <label>Where is the destination located?</label><br>
+                    <input type="radio" name="destination_location" value="internal" required id="dest_internal"> Internal<br>
+                    <input type="radio" name="destination_location" value="external" id="dest_external"> External<br>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connectivity -->
+        <div class="section hidden" id="connectivity-section">
+            <h3>Step 2: Connectivity</h3>
+            <div class="row">
+                <div class="column">
+                    <label>Source connectivity method:</label><br>
+                    <select name="source_connectivity" id="source_connectivity" onchange="checkEnablePayload()">
+                        <option value="">--Select--</option>
+                        <option value="https">HTTPS</option>
+                        <option value="lease_line">Lease Line</option>
+                        <option value="mq">MQ</option>
+                        <option value="kafka">Kafka</option>
+                    </select><br><br>
+                </div>
+                <div class="column">
+                    <label>Destination connectivity method:</label><br>
+                    <select name="destination_connectivity" id="destination_connectivity" onchange="checkEnablePayload()">
+                        <option value="">--Select--</option>
+                        <option value="https">HTTPS</option>
+                        <option value="mq">MQ</option>
+                        <option value="kafka">Kafka</option>
+                    </select><br><br>
+                </div>
+            </div>
+        </div>
+
+        <!-- Combined Payload and Performance -->
+        <div class="section hidden" id="payload-performance-section">
+            <h3>Step 3: Workload Details</h3>
+            <label>Payload size (MB):</label><br>
+            <input type="number" name="payload_size" id="payload_size"><br>
+
+            <label>OAS spec size (KB):</label><br>
+            <input type="number" name="oas_size" id="oas_size"><br><br>
+
+            <label>Source message type:</label><br>
+            <select name="message_type" id="message_type">
+                <option value="">--Select--</option>
+                <option value="rest">REST</option>
+                <option value="soap">SOAP</option>
+            </select><br><br>
+
+            <label>Transactions Per Second (TPS):</label><br>
+            <input type="number" name="tps" id="tps"><br>
+
+            <label>Transactions Per Minute (TPM):</label><br>
+            <input type="number" name="tpm" id="tpm"><br>
+
+            <label>Cycle Time (sec):</label><br>
+            <input type="number" name="cycle_time" id="cycle_time"><br><br>
+        </div>
+
+        <!-- Modernization Check -->
+        <div class="section hidden" id="modernization-section">
+            <h3>Step 4: Modernization</h3>
+            <label>Can it be modernized?</label><br>
+            <input type="radio" name="can_modernize" value="yes"> Yes<br>
+            <input type="radio" name="can_modernize" value="no"> No<br><br>
+        </div>
+
+        <input type="submit" value="Check Gateway">
+    </form>
+
+    <!-- Results Section Included -->
+    {% if flow_label and gateway %}
+    <div class="results">
+        <h3>Result</h3>
+        <p><strong>Flow Type:</strong> {{ flow_label }}</p>
+        <p><strong>Recommended Gateway:</strong> {{ gateway }}</p>
+
+        {% if decision_basis %}
+        <p><strong>Decision Basis:</strong> {{ decision_basis }}</p>
+        {% endif %}
+
+        {% if form %}
+        <h4>Debug Info</h4>
+        <ul>
+            <li>Payload Size: {{ form.payload_size }}</li>
+            <li>OAS Size: {{ form.oas_size }}</li>
+            <li>Message Type: {{ form.message_type }}</li>
+            <li>TPS: {{ form.tps }}</li>
+            <li>TPM: {{ form.tpm }}</li>
+            <li>Cycle Time: {{ form.cycle_time }}</li>
+            <li>Can Modernize: {{ form.can_modernize }}</li>
+            <li>Source Location: {{ form.source_location }}</li>
+            <li>Destination Location: {{ form.destination_location }}</li>
+            <li>Source Connectivity: {{ form.source_connectivity }}</li>
+            <li>Destination Connectivity: {{ form.destination_connectivity }}</li>
+            <li><strong>Trigger Conditions:</strong></li>
+            {% if form.destination_connectivity == 'mq' %}<li>Destination is MQ – shortcut to DataPower.</li>{% endif %}
+            {% if form.payload_size and form.payload_size|float >= 10 %}<li>Payload size >= 10 MB</li>{% endif %}
+            {% if form.oas_size and form.oas_size|float >= 500 %}<li>OAS spec size >= 500 KB</li>{% endif %}
+            {% if form.message_type == 'soap' and form.source_location == 'internal' and form.destination_location == 'internal' %}<li>Internal flow with SOAP</li>{% endif %}
+            {% if form.tps and form.tps|int > 30 %}<li>TPS > 30</li>{% endif %}
+            {% if form.tpm and form.tpm|int > 1000 %}<li>TPM > 1000</li>{% endif %}
+            {% if form.cycle_time and (form.cycle_time|int < 55 or form.cycle_time|int > 120) %}<li>Cycle time < 55 or > 120 seconds</li>{% endif %}
+            {% if not (form.destination_connectivity == 'mq' or
+                       form.payload_size and form.payload_size|float >= 10 or
+                       form.oas_size and form.oas_size|float >= 500 or
+                       (form.message_type == 'soap' and form.source_location == 'internal' and form.destination_location == 'internal') or
+                       form.tps and form.tps|int > 30 or
+                       form.tpm and form.tpm|int > 1000 or
+                       form.cycle_time and (form.cycle_time|int < 55 or form.cycle_time|int > 120)) %}
+                <li>All conditions within acceptable range.</li>
+            {% endif %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <script>
+        function onSourceChange() {
+            const source = document.querySelector('input[name="source_location"]:checked').value;
+            const destExt = document.getElementById("dest_external");
+            const destInt = document.getElementById("dest_internal");
+
+            if (source === 'external') {
+                destExt.disabled = true;
+                destInt.checked = true;
+            } else {
+                destExt.disabled = false;
+            }
+
+            checkEnableConnectivity();
+        }
+
+        const inputs = document.querySelectorAll('input[name="source_location"], input[name="destination_location"]');
+        inputs.forEach(i => i.addEventListener('change', checkEnableConnectivity));
+
+        function checkEnableConnectivity() {
+            const source = document.querySelector('input[name="source_location"]:checked');
+            const dest = document.querySelector('input[name="destination_location"]:checked');
+            if (source && dest) {
+                document.getElementById("connectivity-section").classList.remove("hidden");
+            }
+        }
+
+        function checkEnablePayload() {
+            const srcConn = document.getElementById("source_connectivity").value;
+            const destConn = document.getElementById("destination_connectivity").value;
+            const payloadSection = document.getElementById("payload-performance-section");
+            const modernizationSection = document.getElementById("modernization-section");
+
+            if (srcConn && destConn) {
+                if (destConn === 'mq') {
+                    payloadSection.classList.add("hidden");
+                    modernizationSection.classList.add("hidden");
+                } else {
+                    payloadSection.classList.remove("hidden");
+                }
+            }
+        }
+
+        const evalInputs = ["payload_size", "oas_size", "message_type", "tps", "tpm", "cycle_time"];
+        evalInputs.forEach(id => {
+            document.getElementById(id).addEventListener("input", evaluateConditions);
+        });
+
+        function evaluateConditions() {
+            const payload = parseFloat(document.getElementById("payload_size").value || 0);
+            const oas = parseFloat(document.getElementById("oas_size").value || 0);
+            const msgType = document.getElementById("message_type").value;
+            const tps = parseInt(document.getElementById("tps").value || 0);
+            const tpm = parseInt(document.getElementById("tpm").value || 0);
+            const cycle = parseInt(document.getElementById("cycle_time").value || 0);
+
+            const source = document.querySelector('input[name="source_location"]:checked')?.value;
+            const dest = document.querySelector('input[name="destination_location"]:checked')?.value;
+            const isInternalFlow = source === 'internal' && dest === 'internal';
+
+            const shouldShowModernization =
+                payload >= 10 ||
+                oas >= 500 ||
+                (isInternalFlow && msgType === 'soap') ||
+                tps > 30 ||
+                tpm > 1000 ||
+                cycle < 55 ||
+                cycle > 120;
+
+            document.getElementById("modernization-section").classList.toggle("hidden", !shouldShowModernization);
+        }
+    </script>
+</body>
+</html>
