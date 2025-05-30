@@ -39,19 +39,18 @@ def form():
             msg_type = request.form.get('message_type')
             tps = int(request.form.get('tps', 0))
             tpm = int(request.form.get('tpm', 0))
-            req_time = int(request.form.get('req_time', 0))
-            res_time = int(request.form.get('res_time', 0))
+            cycle_time = int(request.form.get('cycle_time', 0))
             can_modernize = request.form.get('can_modernize') == 'yes'
 
             # Decision rules
             if (
                 payload_size >= 10 or
                 oas_size >= 500 or
-                (flow_label == 'Internal Flow' and msg_type == 'soap') or
+                ((flow_label == 'Internal Flow' or flow_label== 'Egress Flow') and msg_type == 'soap') or
                 tps > 30 or
                 tpm > 1000 or
-                req_time < 55 or
-                res_time > 120
+                cycle_time < 55 or cycle_time > 120
+
             ):
                 gateway = 'Apigee' if can_modernize else 'DataPower'
             else:
