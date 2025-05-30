@@ -50,8 +50,10 @@
                     <select name="destination_connectivity" id="destination_connectivity" onchange="checkEnablePayload()">
                         <option value="">--Select--</option>
                         <option value="https">HTTPS</option>
+                        <option value="lease_line">Lease Line</option>
                         <option value="mq">MQ</option>
                         <option value="kafka">Kafka</option>
+
                     </select><br><br>
                 </div>
             </div>
@@ -99,7 +101,10 @@
     <div class="results">
         <h3>Result</h3>
         <p><strong>Flow Type:</strong> {{ flow_label }}</p>
-        <p><strong>Recommended Gateway:</strong> {{ gateway }}</p>
+        <p><strong>Recommended Gateway:</strong> {{ gateway }}
+    {% if form.can_modernize == 'yes' %}( **application only when it is ready to be modernized as selected **){% endif %}
+</p>
+
 
         {% if decision_basis %}
         <p><strong>Decision Basis:</strong> {{ decision_basis }}</p>
@@ -161,12 +166,42 @@
         inputs.forEach(i => i.addEventListener('change', checkEnableConnectivity));
 
         function checkEnableConnectivity() {
-            const source = document.querySelector('input[name="source_location"]:checked');
-            const dest = document.querySelector('input[name="destination_location"]:checked');
-            if (source && dest) {
-                document.getElementById("connectivity-section").classList.remove("hidden");
-            }
-        }
+    const source = document.querySelector('input[name="source_location"]:checked');
+    const dest = document.querySelector('input[name="destination_location"]:checked');
+
+    if (!(source && dest)) return;
+
+    document.getElementById("connectivity-section").classList.remove("hidden");
+
+    // SOURCE connectivity options
+    const sourceSelect = document.getElementById("source_connectivity");
+    const sourceOptions = [
+        { value: "", label: "--Select--" },
+        { value: "https", label: "HTTPS" },
+        { value: "lease_line", label: "Lease Line", show: source.value === 'external' },
+        { value: "mq", label: "MQ" },
+        { value: "kafka", label: "Kafka" }
+    ];
+    sourceSelect.innerHTML = sourceOptions
+        .filter(opt => opt.show === undefined || opt.show)
+        .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+        .join("");
+
+    // DESTINATION connectivity options
+    const destSelect = document.getElementById("destination_connectivity");
+    const destOptions = [
+        { value: "", label: "--Select--" },
+        { value: "https", label: "HTTPS" },
+        { value: "mq", label: "MQ" },
+        { value: "kafka", label: "Kafka" },
+        { value: "lease_line", label: "Lease Line", show: dest.value === 'external' }
+    ];
+    destSelect.innerHTML = destOptions
+        .filter(opt => opt.show === undefined || opt.show)
+        .map(opt => `<option value="${opt.value}">${opt.label}</option>`)
+        .join("");
+}
+
 
         function checkEnablePayload() {
             const srcConn = document.getElementById("source_connectivity").value;
@@ -199,16 +234,22 @@
 
             const source = document.querySelector('input[name="source_location"]:checked')?.value;
             const dest = document.querySelector('input[name="destination_location"]:checked')?.value;
-            const isInternalFlow = source === 'internal' && dest === 'internal';
+            const flowLabel =
+            source === 'external' && dest === 'internal'
+                ? 'Ingress Flow'
+                : source === 'internal' && dest === 'external'
+                ? 'Egress Flow'
+                : 'Internal Flow';
 
-            const shouldShowModernization =
-                payload >= 10 ||
-                oas >= 500 ||
-                (isInternalFlow && msgType === 'soap') ||
-                tps > 30 ||
-                tpm > 1000 ||
-                cycle < 55 ||
-                cycle > 120;
+        const shouldShowModernization =
+            payload >= 10 ||
+            oas >= 500 ||
+            ((flowLabel === 'Internal Flow' || flowLabel === 'Egress Flow') && msgType === 'soap') ||
+            tps > 30 ||
+            tpm > 1000 ||
+            cycle < 55 ||
+            cycle > 120;
+
 
             document.getElementById("modernization-section").classList.toggle("hidden", !shouldShowModernization);
         }
