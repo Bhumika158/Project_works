@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>App Proxy Form</title>
+    <style>
+        .proxy-item {
+            cursor: pointer;
+            border: 1px solid #ccc;
+            padding: 5px;
+            margin: 5px 0;
+        }
+        .proxy-item:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+
+<form method="POST" enctype="multipart/form-data">
+    <h2>App/Proxy Information</h2>
+
+    <label for="app_id">AppId <span style="color:red;">*</span>:</label>
+    <input type="text" id="app_id" name="app_id" value="{{ data.get('app_id', '') }}" required minlength="3"
+           title="AppId must be at least 3 characters long and should only contain text or numbers"
+           placeholder="Enter AppId (only letters and numbers are allowed)">
+    
+    <div class="form-navigation">
+        <button type="button" id="prev-btn" disabled>Previous</button>
+        <button type="button" id="next-btn">Next</button>
+        <button type="submit" id="submit-btn" style="display: none;">Submit</button>
+    </div>
+</form>
+
+<div id="proxies-section">
+  <!-- Proxies will be populated here -->
+</div>
+
+<div id="proxy-details">
+  <!-- Proxy details will be shown here -->
+</div>
+
+<script>
+document.getElementById("next-btn").addEventListener("click", function() {
+  const appId = document.getElementById("app_id").value;
+  if (!appId) {
+    alert("Please enter App ID first");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("app_id", appId);
+
+  fetch("/get_proxies", {
+    method: "POST",
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    const proxiesSection = document.getElementById("proxies-section");
+    proxiesSection.innerHTML = ""; // clear previous
+
+    if (data.error) {
+      proxiesSection.innerHTML = `<p style="color:red;">${data.error}</p>`;
+      return;
+    }
+
+    const proxies = data.proxies;
+    proxies.forEach(proxy => {
+      const proxyDiv = document.createElement("div");
+      proxyDiv.classList.add("proxy-item");
+      proxyDiv.textContent = proxy;
+      
+      proxyDiv.addEventListener("click", () => {
+        fetchProxyDetails(proxy);
+      });
+
+      proxiesSection.appendChild(proxyDiv);
+    });
+  })
+  .catch(error => {
+    console.error("Error fetching proxies:", error);
+  });
+});
+
+function fetchProxyDetails(proxyName) {
+  fetch(`/get_proxy_details/${proxyName}`)
+    .then(response => response.json())
+    .then(data => {
+      const detailsSection = document.getElementById("proxy-details");
+      detailsSection.innerHTML = `<h3>Details for ${proxyName}</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
+    })
+    .catch(error => {
+      console.error("Error fetching proxy details:", error);
+    });
+}
+</
