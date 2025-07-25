@@ -1,96 +1,72 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>App Proxy Form</title>
-    <style>
-        .proxy-item {
-            cursor: pointer;
-            border: 1px solid #ccc;
-            padding: 5px;
-            margin: 5px 0;
-        }
-        .proxy-item:hover {
-            background-color: #f0f0f0;
-        }
-    </style>
-</head>
-<body>
+import ssl
+import os
+from flask import Flask, request, abort
+from OpenSSL import crypto
+from app import create_app
+from Config.config import CERT_PATH, KEY_PATH, CERT_PASS
 
-<form method="POST" enctype="multipart/form-data">
-    <h2>App/Proxy Information</h2>
+app = create_app()
 
-    <label for="app_id">AppId <span style="color:red;">*</span>:</label>
-    <input type="text" id="app_id" name="app_id" value="{{ data.get('app_id', '') }}" required minlength="3"
-           title="AppId must be at least 3 characters long and should only contain text or numbers"
-           placeholder="Enter AppId (only letters and numbers are allowed)">
-    
-    <div class="form-navigation">
-        <button type="button" id="prev-btn" disabled>Previous</button>
-        <button type="button" id="next-btn">Next</button>
-        <button type="submit" id="submit-btn" style="display: none;">Submit</button>
-    </div>
-</form>
+# Load all trusted leaf certificates from Valcred/
+def load_trusted_client_certs(cert_dir="Valcred"):
+    certs = []
+    for filename in os.listdir(cert_dir):
+        if filename.endswith(".pem"):
+            with open(os.path.join(cert_dir, filename), "rb") as f:
+                cert_data = f.read()
+                cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data)
+                certs.append(cert)
+    return certs
 
-<div id="proxies-section">
-  <!-- Proxies will be populated here -->
-</div>
+# Preload trusted certs
+trusted_client_certs = load_trusted_client_certs()
 
-<div id="proxy-details">
-  <!-- Proxy details will be shown here -->
-</div>
+# Middleware to validate presented client cert
+@app.before_request
+def validate_client_cert():
+    cert = request.environ.get("peercert")
+    if not cert:
+        abort(403, "Client certificate missing")
 
-<script>
-document.getElementById("next-btn").addEventListener("click", function() {
-  const appId = document.getElementById("app_id").value;
-  if (!appId) {
-    alert("Please enter App ID first");
-    return;
-  }
+    client_fp = cert.digest("sha256")
+    whitelist_fps = [c.digest("sha256") for c in trusted_client_certs]
 
-  const formData = new FormData();
-  formData.append("app_id", appId);
+    if client_fp not in whitelist_fps:
+        abort(403, "Client certificate is not trusted")
 
-  fetch("/get_proxies", {
-    method: "POST",
-    body: formData
-  })
-  .then(response => response.json())
-  .then(data => {
-    const proxiesSection = document.getElementById("proxies-section");
-    proxiesSection.innerHTML = ""; // clear previous
+# TLS context setup
+def create_ssl_context():
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.load_cert_chain(certfile=CERT_PATH, keyfile=KEY_PATH, password=CERT_PASS)
 
-    if (data.error) {
-      proxiesSection.innerHTML = `<p style="color:red;">${data.error}</p>`;
-      return;
-    }
+    # Trust CAs or accept self-signed if whitelisting leaf certs
+    context.load_verify_locations(capath="Valcred")  # Can also be a .pem bundle
 
-    const proxies = data.proxies;
-    proxies.forEach(proxy => {
-      const proxyDiv = document.createElement("div");
-      proxyDiv.classList.add("proxy-item");
-      proxyDiv.textContent = proxy;
-      
-      proxyDiv.addEventListener("click", () => {
-        fetchProxyDetails(proxy);
-      });
+    return context
 
-      proxiesSection.appendChild(proxyDiv);
-    });
-  })
-  .catch(error => {
-    console.error("Error fetching proxies:", error);
-  });
-});
+# Patch peer cert into request.environ (Flask does NOT do this natively)
+from werkzeug.serving import WSGIRequestHandler, run_simple
 
-function fetchProxyDetails(proxyName) {
-  fetch(`/get_proxy_details/${proxyName}`)
-    .then(response => response.json())
-    .then(data => {
-      const detailsSection = document.getElementById("proxy-details");
-      detailsSection.innerHTML = `<h3>Details for ${proxyName}</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
-    })
-    .catch(error => {
-      console.error("Error fetching proxy details:", error);
-    });
-}
-</
+class CustomRequestHandler(WSGIRequestHandler):
+    def make_environ(self):
+        environ = super().make_environ()
+        if self.connection:
+            try:
+                peer_cert_bin = self.connection.getpeercert(binary_form=True)
+                if peer_cert_bin:
+                    cert = crypto.load_certificate(crypto.FILETYPE_ASN1, peer_cert_bin)
+                    environ['peercert'] = cert
+            except Exception as e:
+                print(f"Warning: Failed to extract client cert: {e}")
+        return environ
+
+if __name__ == "__main__":
+    ssl_context = create_ssl_context()
+    run_simple(
+        hostname="0.0.0.0",
+        port=58002,
+        application=app,
+        ssl_context=ssl_context,
+        request_handler=CustomRequestHandler
+    )
